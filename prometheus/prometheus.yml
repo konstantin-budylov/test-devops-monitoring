@@ -1,0 +1,137 @@
+global:
+  scrape_interval: 60s  # Интервал сбора метрик - не чаще 1 раза в минуту
+  evaluation_interval: 60s  # Интервал оценки правил
+  scrape_timeout: 30s  # Таймаут для scrape запросов
+
+  external_labels:
+    monitor: 'leads-monitoring'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - '/etc/prometheus/alerts.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Мониторинг самого Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Мониторинг Blackbox Exporter
+  - job_name: 'blackbox-exporter'
+    static_configs:
+      - targets: ['blackbox:9115']
+        labels:
+          service: 'blackbox-exporter'
+
+  # Мониторинг доступности leads.su через HTTP
+  - job_name: 'leads-su-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]  # Использует модуль для проверки HTTP 2xx
+    static_configs:
+      - targets:
+          - https://leads.su
+        labels:
+          domain: 'leads.su'
+          protocol: 'https'
+          check_type: 'availability'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # Мониторинг доступности api.leads.su через HTTP (403 = частично доступен)
+  - job_name: 'api-leads-su-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_403]  # Модуль с поддержкой 403
+    static_configs:
+      - targets:
+          - https://api.leads.su
+        labels:
+          domain: 'api.leads.su'
+          protocol: 'https'
+          check_type: 'availability'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # Мониторинг доступности tracker.leads.su через HTTP (403 = частично доступен)
+  - job_name: 'tracker-leads-su-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_403]  # Модуль с поддержкой 403
+    static_configs:
+      - targets:
+          - https://tracker.leads.su
+        labels:
+          domain: 'tracker.leads.su'
+          protocol: 'https'
+          check_type: 'availability'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # Дополнительная проверка SSL сертификатов
+  - job_name: 'ssl-certificate-check'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://leads.su
+          - https://api.leads.su
+          - https://tracker.leads.su
+        labels:
+          check_type: 'ssl'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # Проверка времени отклика (latency)
+  - job_name: 'latency-check'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    scrape_interval: 60s
+    static_configs:
+      - targets:
+          - https://leads.su
+          - https://api.leads.su
+          - https://tracker.leads.su
+        labels:
+          check_type: 'latency'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+

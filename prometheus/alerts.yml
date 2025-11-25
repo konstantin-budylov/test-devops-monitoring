@@ -1,0 +1,161 @@
+groups:
+  - name: website_availability
+    interval: 60s
+    rules:
+      # Алерт на недоступность сайта
+      - alert: WebsiteDown
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Сайт {{ $labels.instance }} недоступен"
+          description: "Сайт {{ $labels.instance }} не отвечает более 2 минут.\nТекущий статус: DOWN\nJob: {{ $labels.job }}"
+
+      # Алерт на медленный ответ сайта
+      - alert: WebsiteSlowResponse
+        expr: probe_duration_seconds > 5
+        for: 3m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Медленный ответ от {{ $labels.instance }}"
+          description: "Сайт {{ $labels.instance }} отвечает медленно (> 5 секунд).\nТекущее время ответа: {{ $value }}s\nJob: {{ $labels.job }}"
+
+      # Алерт на истечение SSL сертификата
+      - alert: SSLCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "SSL сертификат {{ $labels.instance }} скоро истечет"
+          description: "SSL сертификат для {{ $labels.instance }} истекает через {{ $value | humanizeDuration }}.\nНеобходимо обновить сертификат."
+
+      # Алерт на истекший SSL сертификат
+      - alert: SSLCertificateExpired
+        expr: probe_ssl_earliest_cert_expiry - time() <= 0
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "SSL сертификат {{ $labels.instance }} истек"
+          description: "SSL сертификат для {{ $labels.instance }} истек!\nТребуется немедленное обновление."
+
+      # Алерт на HTTP ошибки (4xx, 5xx), исключая 403
+      - alert: HTTPStatusCodeError
+        expr: probe_http_status_code >= 400 and probe_http_status_code != 403
+        for: 2m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: "HTTP ошибка на {{ $labels.instance }}"
+          description: "Сайт {{ $labels.instance }} возвращает код ошибки: {{ $value }}.\nJob: {{ $labels.job }}"
+
+      # Алерт на 403 (частично доступен)
+      - alert: HTTPForbiddenAccess
+        expr: probe_http_status_code == 403
+        for: 5m
+        labels:
+          severity: info
+          category: availability
+        annotations:
+          summary: "Доступ ограничен на {{ $labels.instance }}"
+          description: "Сайт {{ $labels.instance }} возвращает 403 Forbidden.\nСайт работает, но доступ ограничен.\nJob: {{ $labels.job }}"
+
+      # Алерт на изменение статус кода
+      - alert: HTTPStatusCodeChanged
+        expr: changes(probe_http_status_code[10m]) > 0
+        for: 1m
+        labels:
+          severity: info
+          category: availability
+        annotations:
+          summary: "Изменился HTTP статус код {{ $labels.instance }}"
+          description: "HTTP статус код для {{ $labels.instance }} изменился.\nТекущий код: {{ $value }}"
+
+      # Алерт на недоступность Blackbox Exporter
+      - alert: BlackboxExporterDown
+        expr: up{job="blackbox-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Blackbox Exporter недоступен"
+          description: "Blackbox Exporter не отвечает. Мониторинг сайтов не работает!"
+
+      # Алерт на недоступность Prometheus
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Prometheus недоступен"
+          description: "Prometheus не отвечает. Система мониторинга не работает!"
+
+  - name: website_performance
+    interval: 60s
+    rules:
+      # Алерт на высокую задержку DNS
+      - alert: HighDNSLatency
+        expr: probe_dns_lookup_time_seconds > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Высокая задержка DNS для {{ $labels.instance }}"
+          description: "DNS запрос для {{ $labels.instance }} занимает более 1 секунды.\nТекущее время: {{ $value }}s"
+
+      # Алерт на высокую задержку TCP соединения
+      - alert: HighTCPConnectLatency
+        expr: probe_http_duration_seconds{phase="connect"} > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Высокая задержка TCP соединения для {{ $labels.instance }}"
+          description: "TCP соединение с {{ $labels.instance }} занимает более 2 секунд.\nТекущее время: {{ $value }}s"
+
+      # Алерт на высокую задержку TLS handshake
+      - alert: HighTLSHandshakeLatency
+        expr: probe_http_duration_seconds{phase="tls"} > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Высокая задержка TLS handshake для {{ $labels.instance }}"
+          description: "TLS handshake с {{ $labels.instance }} занимает более 2 секунд.\nТекущее время: {{ $value }}s"
+
+  - name: website_uptime
+    interval: 60s
+    rules:
+      # Метрика uptime (процент доступности за последние 24 часа)
+      - record: website_uptime_24h
+        expr: avg_over_time(probe_success[24h]) * 100
+
+      # Метрика uptime (процент доступности за последние 7 дней)
+      - record: website_uptime_7d
+        expr: avg_over_time(probe_success[7d]) * 100
+
+      # Алерт на низкий uptime
+      - alert: LowUptime
+        expr: website_uptime_24h < 99
+        for: 5m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: "Низкий uptime для {{ $labels.instance }}"
+          description: "Uptime для {{ $labels.instance }} за последние 24 часа составляет {{ $value }}%.\nОжидается > 99%"
+

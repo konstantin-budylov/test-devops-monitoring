@@ -1,0 +1,23 @@
+# Data volumes
+prometheus-data/
+grafana-data/
+alertmanager-data/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.env
+secrets/
+

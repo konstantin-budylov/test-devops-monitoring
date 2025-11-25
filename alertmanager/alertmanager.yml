@@ -1,0 +1,135 @@
+global:
+  resolve_timeout: 5m
+  # SMTP настройки для отправки email уведомлений (опционально)
+  # smtp_smarthost: 'smtp.gmail.com:587'
+  # smtp_from: 'alertmanager@example.com'
+  # smtp_auth_username: 'your-email@gmail.com'
+  # smtp_auth_password: 'your-app-password'
+
+# Шаблоны для уведомлений
+templates:
+  - '/etc/alertmanager/*.tmpl'
+
+# Маршрутизация алертов
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default-receiver'
+  
+  routes:
+    # Критические алерты
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+      continue: true
+      group_wait: 10s
+      repeat_interval: 5m
+
+    # Предупреждения
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
+      continue: true
+      group_wait: 30s
+      repeat_interval: 1h
+
+    # Информационные алерты
+    - match:
+        severity: info
+      receiver: 'info-receiver'
+      group_wait: 1m
+      repeat_interval: 4h
+
+    # Алерты по категориям
+    - match:
+        category: availability
+      receiver: 'availability-receiver'
+      continue: true
+
+    - match:
+        category: performance
+      receiver: 'performance-receiver'
+      continue: true
+
+    - match:
+        category: security
+      receiver: 'security-receiver'
+      continue: true
+
+# Подавление дублирующихся алертов
+inhibit_rules:
+  # Если сайт недоступен, не отправлять алерты о производительности
+  - source_match:
+      severity: 'critical'
+      alertname: 'WebsiteDown'
+    target_match:
+      severity: 'warning'
+    equal: ['instance']
+
+  # Если Blackbox Exporter недоступен, не отправлять алерты о сайтах
+  - source_match:
+      alertname: 'BlackboxExporterDown'
+    target_match_re:
+      alertname: 'Website.*'
+    equal: ['job']
+
+# Получатели уведомлений
+receivers:
+  # Дефолтный получатель (webhook для интеграций)
+  - name: 'default-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+  # Критические алерты
+  - name: 'critical-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/critical'
+        send_resolved: true
+    # Раскомментируйте для email уведомлений
+    # email_configs:
+    #   - to: 'ops-team@example.com'
+    #     headers:
+    #       Subject: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+    #     html: '{{ template "email.default.html" . }}'
+
+  # Предупреждения
+  - name: 'warning-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/warning'
+        send_resolved: true
+    # email_configs:
+    #   - to: 'ops-team@example.com'
+    #     headers:
+    #       Subject: '⚠️  WARNING: {{ .GroupLabels.alertname }}'
+
+  # Информационные алерты
+  - name: 'info-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/info'
+        send_resolved: false
+
+  # Алерты доступности
+  - name: 'availability-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/availability'
+        send_resolved: true
+
+  # Алерты производительности
+  - name: 'performance-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/performance'
+        send_resolved: true
+
+  # Алерты безопасности
+  - name: 'security-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/security'
+        send_resolved: true
+    # email_configs:
+    #   - to: 'security-team@example.com'
+    #     headers:
+    #       Subject: '🔒 SECURITY: {{ .GroupLabels.alertname }}'
+
